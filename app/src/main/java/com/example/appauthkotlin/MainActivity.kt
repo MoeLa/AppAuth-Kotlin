@@ -57,14 +57,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        restoreState()
+        initAuthService()
+        initAuthServiceConfig()
+
         setContent {
             AppAuthKotlinTheme {
                 LoginScreen()
             }
         }
-
-        initAuthService()
-        initAuthServiceConfig()
     }
 
     /**
@@ -194,6 +195,24 @@ class MainActivity : ComponentActivity() {
         val error = AuthorizationException.fromIntent(intent)
 
         authState = AuthState(authorizationResponse, error)
+
+        if (authorizationResponse != null) {
+            val tokenExchangeRequest = authorizationResponse.createTokenExchangeRequest()
+
+            println("tokenExchangeRequest: $tokenExchangeRequest")
+
+            authorizationService.performTokenRequest(tokenExchangeRequest) { response, exception ->
+                if (exception != null) {
+                    authState = AuthState()
+                } else {
+                    if (response != null) {
+                        authState.update(response, exception)
+                        jwt = JWT(response.idToken!!)
+                    }
+                }
+                persistState()
+            }
+        }
     }
 
 

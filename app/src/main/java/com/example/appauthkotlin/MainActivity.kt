@@ -19,8 +19,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.lifecycleScope
 import com.auth0.android.jwt.JWT
 import com.example.appauthkotlin.ui.theme.AppAuthKotlinTheme
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import net.openid.appauth.AppAuthConfiguration
 import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
@@ -28,7 +32,11 @@ import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
 import net.openid.appauth.AuthorizationServiceConfiguration
+import net.openid.appauth.EndSessionRequest
 import net.openid.appauth.ResponseTypeValues
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okio.IOException
 import org.json.JSONException
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -63,7 +71,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AppAuthKotlinTheme {
-                LoginScreen()
+                if (!authState.isAuthorized || jwt == null) {
+                    LoginScreen()
+                } else {
+                    MakeApiCallScreen()
+                }
             }
         }
     }
@@ -71,7 +83,7 @@ class MainActivity : ComponentActivity() {
     /**
      * Restores the authState, if possible.
      */
-    fun restoreState() {
+    private fun restoreState() {
         val jsonString = application
             .getSharedPreferences(Constants.SHARED_PREFERENCES_NAME, Context.MODE_PRIVATE)
             .getString(Constants.AUTH_STATE, null)
@@ -91,7 +103,7 @@ class MainActivity : ComponentActivity() {
     /**
      * Persists the authState.
      */
-    fun persistState() {
+    private fun persistState() {
         application
             .getSharedPreferences(Constants.SHARED_PREFERENCES_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -124,6 +136,35 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    fun MakeApiCallScreen() {
+        Surface(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                Text("AppAuth Kotlin (logged in)")
+                Button(
+                    onClick = { makeApiCall() }
+                ) {
+                    Text("Make API call")
+                }
+                Button(
+                    onClick = {
+                        GlobalScope.launch {
+                            signOutWithoutRedirect()
+                        }
+                    }
+                ) {
+                    Text("Sign out")
+                }
+            }
+        }
+    }
+
+    private fun makeApiCall() {
+        TODO("Not yet implemented")
+    }
+
+    @Composable
     fun LoginScreen() {
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -139,7 +180,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun attemptAuthorization(): Unit {
+    private fun attemptAuthorization(): Unit {
         println("Attempting authorization...")
 
         val secureRandom = SecureRandom()
@@ -186,6 +227,37 @@ class MainActivity : ComponentActivity() {
         launchForResult(authIntent)
     }
 
+    private fun signOut() {
+        try {
+            val endSessionRequest = EndSessionRequest.Builder(authServiceConfig)
+                .setPostLogoutRedirectUri(Uri.parse(Constants.URL_LOGOUT))
+                .setIdTokenHint(authState.accessToken)
+                .build()
+
+            val intent = authorizationService.getEndSessionRequestIntent(endSessionRequest)
+
+            launchForResult(intent)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun signOutWithoutRedirect() {
+        val client = OkHttpClient()
+
+        val request = Request.Builder()
+            .url(Constants.URL_LOGOUT + authState.idToken)
+            .build()
+        try {
+            client.newCall(request).execute()
+        } catch (_: IOException) {
+        } finally {
+            authState = AuthState()
+            jwt = null
+
+            persistState()
+        }
+    }
+
     private fun launchForResult(authIntent: Intent) {
         authorizationLauncher.launch(authIntent)
     }
@@ -215,7 +287,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
     @Preview(
         name = "DarkMode Preview",
         uiMode = Configuration.UI_MODE_NIGHT_YES
@@ -227,6 +298,20 @@ class MainActivity : ComponentActivity() {
     private fun LoginScreenPreview() {
         AppAuthKotlinTheme {
             LoginScreen()
+        }
+    }
+
+    @Preview(
+        name = "DarkMode Preview",
+        uiMode = Configuration.UI_MODE_NIGHT_YES
+    )
+    @Preview(
+        showBackground = true
+    )
+    @Composable
+    private fun MakeApiCallScreenPreview() {
+        AppAuthKotlinTheme {
+            MakeApiCallScreen()
         }
     }
 }

@@ -3,7 +3,6 @@ package com.example.appauthkotlin
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.text.TextUtils
@@ -11,20 +10,11 @@ import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Button
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
 import com.auth0.android.jwt.JWT
-import com.example.appauthkotlin.ui.theme.AppAuthKotlinTheme
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import com.example.appauthkotlin.ui.MainActivityScreen
 import net.openid.appauth.AppAuthConfiguration
 import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
@@ -44,7 +34,7 @@ import java.security.SecureRandom
 class MainActivity : ComponentActivity() {
 
     // stores, as you might guess, the auth state of our app
-    private var authState: AuthState = AuthState()
+    private val authStateViewModel = AuthStateViewModel()
 
     // stores identity information for your authenticated user
     private var jwt: JWT? = null
@@ -70,19 +60,14 @@ class MainActivity : ComponentActivity() {
         initAuthServiceConfig()
 
         setContent {
-            AppAuthKotlinTheme {
-                if (!authState.isAuthorized || jwt == null) {
-                    LoginScreen()
-                } else {
-                    MakeApiCallScreen()
-                }
-            }
+            MainActivityScreen(
+                authStateViewModel,
+                onLogin = { attemptAuthorization() },
+                onMakeApiCall = { makeApiCall() },
+                onSignOut = { signOutWithoutRedirect() })
         }
     }
 
-    /**
-     * Restores the authState, if possible.
-     */
     private fun restoreState() {
         val jsonString = application
             .getSharedPreferences(Constants.SHARED_PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -90,7 +75,8 @@ class MainActivity : ComponentActivity() {
 
         if (jsonString != null && !TextUtils.isEmpty(jsonString)) {
             try {
-                authState = AuthState.jsonDeserialize(jsonString)
+                val authState = AuthState.jsonDeserialize(jsonString)
+                authStateViewModel.onAuthStateChange(authState)
 
                 if (!TextUtils.isEmpty(authState.idToken)) {
                     jwt = JWT(authState.idToken!!)
@@ -100,10 +86,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Persists the authState.
-     */
     private fun persistState() {
+        val authState = authStateViewModel.authState.value!!
+
         application
             .getSharedPreferences(Constants.SHARED_PREFERENCES_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -135,49 +120,8 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    @Composable
-    fun MakeApiCallScreen() {
-        Surface(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column {
-                Text("AppAuth Kotlin (logged in)")
-                Button(
-                    onClick = { makeApiCall() }
-                ) {
-                    Text("Make API call")
-                }
-                Button(
-                    onClick = {
-                        GlobalScope.launch {
-                            signOutWithoutRedirect()
-                        }
-                    }
-                ) {
-                    Text("Sign out")
-                }
-            }
-        }
-    }
-
     private fun makeApiCall() {
         TODO("Not yet implemented")
-    }
-
-    @Composable
-    fun LoginScreen() {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column {
-                Text("AppAuth Kotlin")
-                Button(
-                    onClick = { attemptAuthorization() }
-                ) {
-                    Text("Login")
-                }
-            }
-        }
     }
 
     private fun attemptAuthorization(): Unit {
@@ -228,6 +172,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun signOut() {
+        val authState = authStateViewModel.authState.value!!
+
         try {
             val endSessionRequest = EndSessionRequest.Builder(authServiceConfig)
                 .setPostLogoutRedirectUri(Uri.parse(Constants.URL_LOGOUT))
@@ -242,16 +188,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun signOutWithoutRedirect() {
-        val client = OkHttpClient()
+        val authState = authStateViewModel.authState.value!!
 
         val request = Request.Builder()
             .url(Constants.URL_LOGOUT + authState.idToken)
             .build()
+
+        val client = OkHttpClient()
         try {
-            client.newCall(request).execute()
+//            client.newCall(request).execute()
         } catch (_: IOException) {
         } finally {
-            authState = AuthState()
+            authStateViewModel.onAuthStateChange(AuthState())
             jwt = null
 
             persistState()
@@ -266,7 +214,8 @@ class MainActivity : ComponentActivity() {
         val authorizationResponse: AuthorizationResponse? = AuthorizationResponse.fromIntent(intent)
         val error = AuthorizationException.fromIntent(intent)
 
-        authState = AuthState(authorizationResponse, error)
+        val authState = AuthState(authorizationResponse, error)
+        // Note: We gonna update the authStateViewModel after the token request, not now
 
         if (authorizationResponse != null) {
             val tokenExchangeRequest = authorizationResponse.createTokenExchangeRequest()
@@ -275,10 +224,11 @@ class MainActivity : ComponentActivity() {
 
             authorizationService.performTokenRequest(tokenExchangeRequest) { response, exception ->
                 if (exception != null) {
-                    authState = AuthState()
+                    authStateViewModel.onAuthStateChange(AuthState())
                 } else {
                     if (response != null) {
                         authState.update(response, exception)
+                        authStateViewModel.onAuthStateChange(authState)
                         jwt = JWT(response.idToken!!)
                     }
                 }
@@ -286,32 +236,15 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
 
-    @Preview(
-        name = "DarkMode Preview",
-        uiMode = Configuration.UI_MODE_NIGHT_YES
-    )
-    @Preview(
-        showBackground = true
-    )
-    @Composable
-    private fun LoginScreenPreview() {
-        AppAuthKotlinTheme {
-            LoginScreen()
-        }
+class AuthStateViewModel : ViewModel() {
+
+    private val _authState: MutableLiveData<AuthState> = MutableLiveData(AuthState())
+    val authState: LiveData<AuthState> = _authState
+
+    fun onAuthStateChange(newAuthState: AuthState) {
+        _authState.value = newAuthState
     }
 
-    @Preview(
-        name = "DarkMode Preview",
-        uiMode = Configuration.UI_MODE_NIGHT_YES
-    )
-    @Preview(
-        showBackground = true
-    )
-    @Composable
-    private fun MakeApiCallScreenPreview() {
-        AppAuthKotlinTheme {
-            MakeApiCallScreen()
-        }
-    }
 }

@@ -11,13 +11,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import coil3.compose.AsyncImage
+import com.auth0.android.jwt.JWT
 import com.example.appauthkotlin.AuthStateViewModel
 import com.example.appauthkotlin.ui.theme.AppAuthKotlinTheme
 
 @Composable
 fun MainActivityScreen(
     authStateViewModel: AuthStateViewModel,
-    onLogin: () -> Unit,
+    onAuthorize: () -> Unit,
     onMakeApiCall: () -> Unit,
     onSignOut: () -> Unit
 ) {
@@ -25,29 +27,35 @@ fun MainActivityScreen(
 
     AppAuthKotlinTheme {
         if (authState?.isAuthorized == true) {
+            val jwt = JWT(authState!!.idToken!!)
+
             MakeApiCallScreen(
                 onMakeApiCall = { onMakeApiCall() },
-                onSignOut = { onSignOut() }
+                onSignOut = { onSignOut() },
+                picture = jwt.getClaim("picture").asString()!!,
+                givenName = jwt.getClaim("given_name").asString()!!,
+                familyName = jwt.getClaim("family_name").asString()!!,
+                email = jwt.getClaim("email").asString()!!
             )
         } else {
             LoginScreen(
-                onLogin = { onLogin() }
+                onAuthorize = { onAuthorize() }
             )
         }
     }
 }
 
 @Composable
-fun LoginScreen(onLogin: () -> Unit) {
+fun LoginScreen(onAuthorize: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column {
             Text("AppAuth Kotlin")
             Button(
-                onClick = { onLogin() }
+                onClick = { onAuthorize() }
             ) {
-                Text("Login")
+                Text("Authorize")
             }
         }
     }
@@ -56,13 +64,17 @@ fun LoginScreen(onLogin: () -> Unit) {
 @Composable
 fun MakeApiCallScreen(
     onMakeApiCall: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    picture: String = "https://lh3.googleusercontent.com/a/AATXAJxLybvnZXDYrK8zm2XglOSqt_anMmSP1_vqXbvr=s96-c",
+    givenName: String = "John",
+    familyName: String = "Doe",
+    email: String = "john.doe@gmail.com"
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
-            Text("AppAuth Kotlin (logged in)")
+            Text("AppAuth Kotlin")
             Button(
                 onClick = { onMakeApiCall() }
             ) {
@@ -73,6 +85,13 @@ fun MakeApiCallScreen(
             ) {
                 Text("Sign out")
             }
+            // Note: The AsyncImage doesn't appear in Android Studio's Design Preview
+            AsyncImage(
+                model = picture,
+                contentDescription = "Your Google's Profile Picture"
+            )
+            Text("$givenName $familyName")
+            Text(email)
         }
     }
 }

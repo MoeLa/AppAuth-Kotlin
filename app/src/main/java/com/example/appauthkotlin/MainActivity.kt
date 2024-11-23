@@ -13,7 +13,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
-import com.auth0.android.jwt.JWT
 import com.example.appauthkotlin.ui.MainActivityScreen
 import net.openid.appauth.AppAuthConfiguration
 import net.openid.appauth.AuthState
@@ -33,13 +32,13 @@ import java.security.SecureRandom
 
 class MainActivity : ComponentActivity() {
 
-    // stores, as you might guess, the auth state of our app
+    // Stores, as you might guess, the auth state of our app
     private val authStateViewModel = AuthStateViewModel()
 
-    // stores identity information for your authenticated user
-    private var jwt: JWT? = null
+    // Stores identity information for your authenticated user - moved to UiComponents
+    // private var jwt: JWT? = null
 
-    // used for managing the auth flow
+    // Used for managing the auth flow
     private lateinit var authorizationService: AuthorizationService
     private lateinit var authServiceConfig: AuthorizationServiceConfiguration
 
@@ -62,7 +61,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MainActivityScreen(
                 authStateViewModel,
-                onLogin = { attemptAuthorization() },
+                onAuthorize = { attemptAuthorization() },
                 onMakeApiCall = { makeApiCall() },
                 onSignOut = { signOutWithoutRedirect() })
         }
@@ -78,9 +77,10 @@ class MainActivity : ComponentActivity() {
                 val authState = AuthState.jsonDeserialize(jsonString)
                 authStateViewModel.onAuthStateChange(authState)
 
-                if (!TextUtils.isEmpty(authState.idToken)) {
-                    jwt = JWT(authState.idToken!!)
-                }
+                // Moved to UiComponents, where the content is actually displayed
+//                if (!TextUtils.isEmpty(authState.idToken)) {
+//                    jwt = JWT(authState.idToken!!)
+//                }
             } catch (_: JSONException) {
             }
         }
@@ -124,7 +124,7 @@ class MainActivity : ComponentActivity() {
         TODO("Not yet implemented")
     }
 
-    private fun attemptAuthorization(): Unit {
+    private fun attemptAuthorization() {
         println("Attempting authorization...")
 
         val secureRandom = SecureRandom()
@@ -200,7 +200,7 @@ class MainActivity : ComponentActivity() {
         } catch (_: IOException) {
         } finally {
             authStateViewModel.onAuthStateChange(AuthState())
-            jwt = null
+//            jwt = null
 
             persistState()
         }
@@ -229,7 +229,7 @@ class MainActivity : ComponentActivity() {
                     if (response != null) {
                         authState.update(response, exception)
                         authStateViewModel.onAuthStateChange(authState)
-                        jwt = JWT(response.idToken!!)
+//                        jwt = JWT(response.idToken!!)
                     }
                 }
                 persistState()

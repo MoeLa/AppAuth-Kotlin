@@ -14,6 +14,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import coil3.compose.AsyncImage
 import com.auth0.android.jwt.JWT
 import com.example.appauthkotlin.AuthStateViewModel
+import com.example.appauthkotlin.Constants
 import com.example.appauthkotlin.ui.theme.AppAuthKotlinTheme
 
 @Composable
@@ -32,10 +33,10 @@ fun MainActivityScreen(
             MakeApiCallScreen(
                 onMakeApiCall = { onMakeApiCall() },
                 onSignOut = { onSignOut() },
-                picture = jwt.getClaim("picture").asString()!!,
-                givenName = jwt.getClaim("given_name").asString()!!,
-                familyName = jwt.getClaim("family_name").asString()!!,
-                email = jwt.getClaim("email").asString()!!
+                picture = jwt.getClaim(Constants.DATA_PICTURE).asString()!!,
+                givenName = jwt.getClaim(Constants.DATA_FIRST_NAME).asString()!!,
+                familyName = jwt.getClaim(Constants.DATA_LAST_NAME).asString()!!,
+                email = jwt.getClaim(Constants.DATA_EMAIL).asString()!!
             )
         } else {
             LoginScreen(
@@ -70,6 +71,7 @@ fun MakeApiCallScreen(
     familyName: String = "Doe",
     email: String = "john.doe@gmail.com"
 ) {
+
     Surface(
         modifier = Modifier.fillMaxWidth()
     ) {

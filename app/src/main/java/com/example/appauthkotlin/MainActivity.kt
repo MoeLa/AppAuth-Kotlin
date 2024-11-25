@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.text.TextUtils
 import android.util.Base64
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +15,10 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import com.example.appauthkotlin.ui.MainActivityScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import net.openid.appauth.AppAuthConfiguration
 import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
@@ -23,14 +28,19 @@ import net.openid.appauth.AuthorizationService
 import net.openid.appauth.AuthorizationServiceConfiguration
 import net.openid.appauth.EndSessionRequest
 import net.openid.appauth.ResponseTypeValues
+import net.openid.appauth.browser.BrowserAllowList
+import net.openid.appauth.browser.VersionedBrowserMatcher
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.IOException
 import org.json.JSONException
+import org.json.JSONObject
 import java.security.MessageDigest
 import java.security.SecureRandom
 
 class MainActivity : ComponentActivity() {
+
+    private val LOG_TAG = MainActivity::class.qualifiedName
 
     // Stores, as you might guess, the auth state of our app
     private val authStateViewModel = AuthStateViewModel()
@@ -77,10 +87,7 @@ class MainActivity : ComponentActivity() {
                 val authState = AuthState.jsonDeserialize(jsonString)
                 authStateViewModel.onAuthStateChange(authState)
 
-                // Moved to UiComponents, where the content is actually displayed
-//                if (!TextUtils.isEmpty(authState.idToken)) {
-//                    jwt = JWT(authState.idToken!!)
-//                }
+                // Note: Extracting the JWT is done within the UI component, that actually use/display the data
             } catch (_: JSONException) {
             }
         }
@@ -107,11 +114,11 @@ class MainActivity : ComponentActivity() {
 
     private fun initAuthService() {
         val appAuthConfiguration = AppAuthConfiguration.Builder()
-//            .setBrowserMatcher(
-//                BrowserAllowList(
-//                    VersionedBrowserMatcher.CHROME_CUSTOM_TAB
-//                )
-//            )
+            .setBrowserMatcher(
+                BrowserAllowList(
+                    VersionedBrowserMatcher.CHROME_CUSTOM_TAB
+                )
+            )
             .build()
 
         authorizationService = AuthorizationService(
@@ -121,11 +128,40 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun makeApiCall() {
-        TODO("Not yet implemented")
+        val authState = authStateViewModel.authState.value
+
+        authState!!.performActionWithFreshTokens(
+            authorizationService,
+            object : AuthState.AuthStateAction {
+                override fun execute(
+                    accessToken: String?,
+                    idToken: String?,
+                    ex: AuthorizationException?
+                ) {
+                    GlobalScope.launch {
+                        async(Dispatchers.IO) {
+                            val client = OkHttpClient()
+
+                            val request = Request.Builder()
+                                .url(Constants.URL_API_CALL)
+                                .addHeader("Authorization", "Bearer $accessToken")
+                                .build()
+
+                            try {
+                                val response = client.newCall(request).execute()
+                                val jsonBody = response.body?.string() ?: ""
+                                Log.i(LOG_TAG, JSONObject(jsonBody).toString())
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }
+                }
+            }
+        )
     }
 
     private fun attemptAuthorization() {
-        println("Attempting authorization...")
+        Log.i(LOG_TAG, "Attempting authorization...")
 
         val secureRandom = SecureRandom()
         val bytes = ByteArray(64)
@@ -134,13 +170,13 @@ class MainActivity : ComponentActivity() {
         val encoding = Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
         val codeVerifier = Base64.encodeToString(bytes, encoding)
 
-        println("codeVerifier: $codeVerifier")
+        Log.i(LOG_TAG, "codeVerifier: $codeVerifier")
 
         val digest = MessageDigest.getInstance(Constants.MESSAGE_DIGEST_ALGORITHM)
         val hash = digest.digest(codeVerifier.toByteArray())
         val codeChallenge = Base64.encodeToString(hash, encoding)
 
-        println("codeChallenge: $codeChallenge")
+        Log.i(LOG_TAG, "codeChallenge: $codeChallenge")
 
         val builder = AuthorizationRequest.Builder(
             authServiceConfig,
@@ -196,11 +232,15 @@ class MainActivity : ComponentActivity() {
 
         val client = OkHttpClient()
         try {
-//            client.newCall(request).execute()
+            GlobalScope.launch {
+                async(Dispatchers.IO) {
+                    // Execute API call in separate thread
+                    client.newCall(request).execute()
+                }
+            }
         } catch (_: IOException) {
         } finally {
             authStateViewModel.onAuthStateChange(AuthState())
-//            jwt = null
 
             persistState()
         }
@@ -220,7 +260,7 @@ class MainActivity : ComponentActivity() {
         if (authorizationResponse != null) {
             val tokenExchangeRequest = authorizationResponse.createTokenExchangeRequest()
 
-            println("tokenExchangeRequest: $tokenExchangeRequest")
+            Log.i(LOG_TAG, "tokenExchangeRequest: $tokenExchangeRequest")
 
             authorizationService.performTokenRequest(tokenExchangeRequest) { response, exception ->
                 if (exception != null) {
@@ -229,15 +269,18 @@ class MainActivity : ComponentActivity() {
                     if (response != null) {
                         authState.update(response, exception)
                         authStateViewModel.onAuthStateChange(authState)
-//                        jwt = JWT(response.idToken!!)
                     }
                 }
+
                 persistState()
             }
         }
     }
 }
 
+/**
+ * ViewModel to hold the authState resp. its LiveData representative.
+ */
 class AuthStateViewModel : ViewModel() {
 
     private val _authState: MutableLiveData<AuthState> = MutableLiveData(AuthState())
